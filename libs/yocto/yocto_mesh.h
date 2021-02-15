@@ -8,7 +8,7 @@
 //
 // LICENSE:
 //
-// Copyright (c) 2016 -- 2021 Fabio Pellacini
+// Copyright (c) 2016 -- 2020 Fabio Pellacini
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -273,6 +273,11 @@ float         path_length(const vector<vec3f>& positions);
 
 mesh_point eval_path_point(const geodesic_path& path,
     const vector<vec3i>& triangles, const vector<vec3f>& positions,
+    const vector<vec3i>& adjacencies, const vector<float>& parameter_t,
+    float t);
+
+mesh_point eval_path_point(const geodesic_path& path,
+    const vector<vec3i>& triangles, const vector<vec3f>& positions,
     const vector<vec3i>& adjacencies, float t);
 
 inline mesh_point eval_path_midpoint(const geodesic_path& path,
@@ -390,6 +395,12 @@ namespace yocto {
 
 // Load/save a shape as indexed meshes
 bool load_mesh(const string& filename, vector<vec3i>& triangles,
+    vector<vec3f>& positions, string& error);
+bool save_mesh(const string& filename, const vector<vec3i>& triangles,
+    const vector<vec3f>& positions, string& error, bool ascii = false);
+
+// Load/save a shape as indexed meshes
+bool load_mesh(const string& filename, vector<vec3i>& triangles,
     vector<vec3f>& positions, vector<vec3f>& normals, vector<vec2f>& texcoords,
     vector<vec4f>& colors, string& error, bool flip_texcoords = true);
 bool save_mesh(const string& filename, const vector<vec3i>& triangles,
@@ -405,12 +416,6 @@ bool save_lines(const string& filename, const vector<vec2i>& lines,
     const vector<vec3f>& positions, const vector<vec3f>& normals,
     const vector<vec2f>& texcoords, const vector<vec4f>& colors, string& error,
     bool ascii = false, bool flip_texcoords = true);
-
-// Load/save a shape as indexed meshes
-bool load_mesh(const string& filename, vector<vec3i>& triangles,
-    vector<vec3f>& positions, string& error);
-bool save_mesh(const string& filename, const vector<vec3i>& triangles,
-    const vector<vec3f>& positions, string& error, bool ascii = false);
 
 }  // namespace yocto
 

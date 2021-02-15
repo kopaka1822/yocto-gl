@@ -2,30 +2,6 @@
 // Implementation for Yocto/Mesh
 //
 
-//
-// LICENSE:
-//
-// Copyright (c) 2016 -- 2021 Fabio Pellacini
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-//
-
 // TODO(fabio): remove asserts
 // TODO(fabio): better name for v2t
 // TODO(fabio): better name for adjacencies
@@ -45,8 +21,11 @@
 #include <unordered_set>
 #include <utility>
 
+#include "yocto_commonio.h"
 #include "yocto_geometry.h"
 #include "yocto_modelio.h"
+
+#define assert(x) ;
 
 // -----------------------------------------------------------------------------
 // USING DIRECTIVES
@@ -58,23 +37,6 @@ using std::deque;
 using std::pair;
 using std::unordered_set;
 using namespace std::string_literals;
-
-}  // namespace yocto
-
-// -----------------------------------------------------------------------------
-// PATH UTILITIES
-// -----------------------------------------------------------------------------
-namespace yocto {
-
-// Make a path from a utf8 string
-static std::filesystem::path make_path(const string& filename) {
-  return std::filesystem::u8path(filename);
-}
-
-// Get extension (including .)
-static string path_extension(const string& filename) {
-  return make_path(filename).extension().u8string();
-}
 
 }  // namespace yocto
 
@@ -211,8 +173,27 @@ vec2f intersect_circles(const vec2f& c2, float R2, const vec2f& c1, float R1) {
   auto B = (R1 - R2) * invR;
   auto s = A - B * B - 1;
   assert(s >= 0);
-  result += vec2f{c2.y - c1.y, c1.x - c2.x} * sqrt(s);
+  result += vec2f{c2.y - c1.y, c1.x - c2.x} * yocto::sqrt(s);
   return result / 2;
+}
+
+static vec2f intersect_circles_double(
+    float c2x, float c2y, float R2, double c1x, double c1y, float R1) {
+  auto R = (c2x - c1x) * (c2x - c1x) + (c2y - c1y) * (c2y - c1y);
+  assert(R > 0);
+  auto invR    = 1 / R;
+  auto resultx = (c1x + c2x);
+  auto resulty = (c1y + c2y);
+  resultx += (c2x - c1x) * ((R1 - R2) * invR);
+  resulty += (c2y - c1y) * ((R1 - R2) * invR);
+
+  auto A = 2 * (R1 + R2) * invR;
+  auto B = (R1 - R2) * invR;
+  auto s = A - B * B - 1;
+  assert(s >= 0);
+  resultx += c2y - c1y * yocto::sqrt(s);
+  resulty += c1x - c2x * yocto::sqrt(s);
+  return vec2f{(float)(resultx / 2), (float)(resulty / 2)};
 }
 
 // TODO: cleanup
@@ -248,6 +229,49 @@ inline int find_adjacent_triangle(
   return find_adjacent_triangle(triangles[face], triangles[neighbor]);
 }
 
+// TODO: cleanup
+// inline double distance_squared_double(const vec3f& a, const vec3f& b) {
+//   return (a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) +
+//          (a[2] - b[2]) * (a[2] - b[2]);
+// }
+
+// TODO: cleanup
+// inline double orthogonal_projection(
+//     const vec3f& o, const vec3f& v, const vec3f& p) {
+//   double vx = double(o.x) - double(v.x);
+//   double vy = double(o.y) - double(v.y);
+//   double vz = double(o.z) - double(v.z);
+
+//   double px = double(o.x) - double(p.x);
+//   double py = double(o.y) - double(p.y);
+//   double pz = double(o.z) - double(p.z);
+
+//   auto d = vx * px + vy * py + vz * pz;
+//   d /= std::yocto::sqrt(vx * vx + vy * vy + vz * vz);
+//   return d;
+// }
+
+inline vec2f unfold_point(const vec3f& pa, const vec3f& pb, const vec3f& pv,
+    const vec2f& ca, const vec2f& cb) {
+  // Unfold position of vertex v
+  auto ex = normalize(ca - cb);
+  auto ey = vec2f{-ex.y, ex.x};
+
+  auto result = vec2f{};
+
+  // Ortogonal projection
+  auto pv_pb = pv - pb;
+  auto x     = dot(pa - pb, pv_pb) / length(pa - pb);
+  result     = x * ex;
+
+  // Pythagorean theorem
+  auto y = dot(pv_pb, pv_pb) - x * x;
+  assert(y > 0);
+  y = yocto::sqrt(y);
+  result += y * ey;
+  return result;
+}
+
 // given the 2D coordinates in tanget space of a triangle, find the coordinates
 // of the k-th neighbor triangle
 unfold_triangle unfold_face(const vector<vec3i>& triangles,
@@ -257,17 +281,34 @@ unfold_triangle unfold_face(const vector<vec3i>& triangles,
   auto j = find_adjacent_triangle(triangles, neighbor, face);
   assert(j != -1);
   assert(k != -1);
-  auto v  = triangles[neighbor][mod3(j + 2)];
-  auto a  = triangles[face][k];
-  auto b  = triangles[face][mod3(k + 1)];
-  auto r0 = length_squared(positions[v] - positions[a]);
-  auto r1 = length_squared(positions[v] - positions[b]);
+  auto v = triangles[neighbor][mod3(j + 2)];
+  auto a = triangles[face][k];
+  auto b = triangles[face][mod3(k + 1)];
 
-  auto res         = unfold_triangle{};
-  res[j]           = tr[mod3(k + 1)];
-  res[mod3(j + 1)] = tr[k];
-  res[mod3(j + 2)] = intersect_circles(res[j], r1, res[mod3(j + 1)], r0);
-  return res;
+  auto result         = unfold_triangle{};
+  result[j]           = tr[mod3(k + 1)];
+  result[mod3(j + 1)] = tr[k];
+
+  // TODO(splinesurf): check which unfolding method is better.
+#if 1
+  // old method
+  auto r0             = length_squared(positions[v] - positions[a]);
+  auto r1             = length_squared(positions[v] - positions[b]);
+  result[mod3(j + 2)] = intersect_circles(
+      result[j], r1, result[mod3(j + 1)], r0);
+#else
+  // new method
+  auto& pa    = positions[a];
+  auto& pb    = positions[b];
+  auto& pv    = positions[v];
+  auto  point = unfold_point(pa, pb, pv, result[mod3(j + 1)], result[j]);
+  result[mod3(j + 2)] = result[j] + point;
+#endif
+
+  assert(result[0] != result[1]);
+  assert(result[1] != result[2]);
+  assert(result[2] != result[0]);
+  return result;
 }
 
 // TODO: cleanup
@@ -281,21 +322,25 @@ static unfold_triangle unfold_face(const vector<vec3i>& triangles,
 // point, putting the point at (0, 0)
 unfold_triangle triangle_coordinates(const vector<vec3i>& triangles,
     const vector<vec3f>& positions, const mesh_point& point) {
-  auto first = unfold_triangle{};
-  auto tr    = triangles[point.face];
-  first[0]   = {0, 0};
-  first[1]   = {0, length(positions[tr.x] - positions[tr.y])};
-  auto rx    = length_squared(positions[tr.x] - positions[tr.z]);
-  auto ry    = length_squared(positions[tr.y] - positions[tr.z]);
-  first[2]   = intersect_circles(first[0], rx, first[1], ry);
+  auto result = unfold_triangle{};
+  auto tr     = triangles[point.face];
+  result[0]   = {0, 0};
+  result[1]   = {0, length(positions[tr.x] - positions[tr.y])};
+  auto rx     = length_squared(positions[tr.x] - positions[tr.z]);
+  auto ry     = length_squared(positions[tr.y] - positions[tr.z]);
+  result[2]   = intersect_circles(result[0], rx, result[1], ry);
 
   // Transform coordinates such that point = (0, 0)
   auto point_coords = interpolate_triangle(
-      first[0], first[1], first[2], point.uv);
-  first[0] -= point_coords;
-  first[1] -= point_coords;
-  first[2] -= point_coords;
-  return first;
+      result[0], result[1], result[2], point.uv);
+  result[0] -= point_coords;
+  result[1] -= point_coords;
+  result[2] -= point_coords;
+
+  assert(result[0] != result[1]);
+  assert(result[1] != result[2]);
+  assert(result[2] != result[0]);
+  return result;
 }
 
 // assign 2D coordinates to a strip of triangles. point start is at (0, 0)
@@ -307,6 +352,9 @@ vector<unfold_triangle> unfold_strip(const vector<vec3i>& triangles,
   coords[0] = triangle_coordinates(triangles, positions, start);
 
   for (auto i = 1; i < strip.size(); i++) {
+    assert(coords[i - 1][0] != coords[i - 1][1]);
+    assert(coords[i - 1][1] != coords[i - 1][2]);
+    assert(coords[i - 1][2] != coords[i - 1][0]);
     coords[i] = unfold_face(
         triangles, positions, coords[i - 1], strip[i - 1], strip[i]);
   }
@@ -404,7 +452,10 @@ vector<int> triangle_fan(
   auto prev   = face;
   auto node   = adjacencies[face][k];
   auto offset = 2 - (int)clockwise;
-  while (true) {
+  for (int i = 0; i < 256; i++) {
+    // if (i == 15) {
+    //   printf("[error] %s\n", __FUNCTION__);
+    // }
     if (node == -1) break;
     if (node == face) break;
     result.push_back(node);
@@ -643,8 +694,8 @@ static float opposite_nodes_arc_length(
 
   auto cos_alpha = dot(normalize(ba), normalize(bd));
   auto cos_beta  = dot(normalize(bc), normalize(bd));
-  auto sin_alpha = sqrt(max(0.0f, 1 - cos_alpha * cos_alpha));
-  auto sin_beta  = sqrt(max(0.0f, 1 - cos_beta * cos_beta));
+  auto sin_alpha = yocto::sqrt(max(0.0f, 1 - cos_alpha * cos_alpha));
+  auto sin_beta  = yocto::sqrt(max(0.0f, 1 - cos_beta * cos_beta));
 
   // cos(alpha + beta)
   auto cos_alpha_beta = cos_alpha * cos_beta - sin_alpha * sin_beta;
@@ -657,7 +708,7 @@ static float opposite_nodes_arc_length(
   if (len <= 0)
     return flt_max;
   else
-    return sqrt(len);
+    return yocto::sqrt(len);
 }
 
 static void connect_opposite_nodes(geodesic_solver& solver,
@@ -701,6 +752,9 @@ geodesic_solver make_geodesic_solver(const vector<vec3i>& triangles,
   return solver;
 }
 
+static void straighten_path(geodesic_path& path, const vector<vec3i>& triangles,
+    const vector<vec3f>& positions, const vector<vec3i>& adjacencies);
+
 // Construct a graph to compute geodesic distances
 dual_geodesic_solver make_dual_geodesic_solver(const vector<vec3i>& triangles,
     const vector<vec3f>& positions, const vector<vec3i>& adjacencies) {
@@ -720,9 +774,22 @@ dual_geodesic_solver make_dual_geodesic_solver(const vector<vec3i>& triangles,
       if (adjacencies[i][k] == -1) {
         solver.graph[i][k].length = flt_max;
       } else {
+        // TODO(splinesurf): check which solver is better/faster.
+#if 1
         solver.graph[i][k].length = length(
             get_triangle_center(triangles, positions, i) -
             get_triangle_center(triangles, positions, adjacencies[i][k]));
+#else
+        auto p0    = mesh_point{i, {1 / 3.f, 1 / 3.f}};
+        auto p1    = mesh_point{adjacencies[i][k], {1 / 3.f, 1 / 3.f}};
+        auto path  = geodesic_path{};
+        path.strip = {i, adjacencies[i][k]};
+        path.start = p0;
+        path.end   = p1;
+        straighten_path(path, triangles, positions, adjacencies);
+        auto len = path_length(path, triangles, positions, adjacencies);
+        solver.graph[i][k].length = len;
+#endif
       }
     }
   }
@@ -984,6 +1051,7 @@ vector<vector<float>> compute_voronoi_fields(
   // computation time weakly dependant on the number of generators.
   auto total = compute_geodesic_distances(solver, generators);
   auto max   = *std::max_element(total.begin(), total.end());
+  // @Speed: use parallel_for
   for (auto i = 0; i < generators.size(); ++i) {
     fields[i]                = vector<float>(solver.graph.size(), flt_max);
     fields[i][generators[i]] = 0;
@@ -1933,8 +2001,9 @@ vector<int> strip_on_dual_graph(const dual_geodesic_solver& solver,
   auto strip = vector<int>{};
   auto node  = end;
   assert(parents[end] != -1);
-  strip.reserve((int)sqrt(parents.size()));
-  while (node != -1) {
+  strip.reserve((int)yocto::sqrt(parents.size()));
+  for (int i = 0; i < parents.size() && node != -1; i++) {
+    // while (node != -1) {
     assert(find_in_vec(strip, node) != 1);
     strip.push_back(node);
     node = parents[node];
@@ -2500,10 +2569,11 @@ static vector<int> fix_strip(const vector<vec3i>& adjacencies,
   // Create triangle fan that starts at face, walks backward along the strip for
   // a while, exits and then re-enters back.
   auto fan = triangle_fan(adjacencies, face, k, left);
+  if (fan.empty()) return strip;
 
   // strip in the array of faces and fan is a loop of faces which has partial
   // intersection with strip. We wan to remove the intersection from strip and
-  // insert there the remaining part of fan, so that we have a new valid strip.
+  // insert there the remaini ng part of fan, so that we have a new valid strip.
   auto first_strip_intersection = index;
   auto first_fan_intersection   = 0;
   for (auto i = 1; i < fan.size(); i++) {
@@ -2531,11 +2601,15 @@ static vector<int> fix_strip(const vector<vec3i>& adjacencies,
     }
   }
 
-  auto result = vector<int>{};
+  if (first_strip_intersection >= second_strip_intersection) return strip;
+  if (first_fan_intersection >= second_fan_intersection) return strip;
+
+  auto result = vector<int>();
   result.reserve(strip.size() + 12);
-  // Initial part of original strip, until intersection with fan.
-  for (auto i = 0; i < first_strip_intersection; ++i)
-    result.push_back(strip[i]);
+
+  // Initial part of original strip, up until intersection with fan.
+  result.insert(
+      result.end(), strip.begin(), strip.begin() + first_strip_intersection);
 
   // Append out-flanking part of fan.
   result.insert(result.end(), fan.begin() + first_fan_intersection,
@@ -2557,7 +2631,8 @@ static void straighten_path(geodesic_path& path, const vector<vec3i>& triangles,
   path.lerps = funnel(init_portals, index);
 
   // while(true) { this may never break...
-  for (auto i = 0; i < path.strip.size() * 2 && index != -1; i++) {
+  auto max_iterations = path.strip.size() * 2;
+  for (auto i = 0; i < max_iterations && index != -1; i++) {
     auto new_vertex = -1;
     auto face       = path.strip[index];
     auto next       = path.strip[index + 1];
@@ -2614,7 +2689,11 @@ mesh_path convert_mesh_path(const vector<vec3i>& triangles,
 
 mesh_point eval_path_point(const geodesic_path& path,
     const vector<vec3i>& triangles, const vector<vec3f>& positions,
-    const vector<vec3i>& adjacencies, float t) {
+    const vector<vec3i>& adjacencies, const vector<float>& parameter_t,
+    float t) {
+  if (t <= 0) return path.start;
+  if (t >= 1) return path.end;
+
   // strip with 1 triangle are trivial, just average the uvs
   if (path.start.face == path.end.face) {
     return mesh_point{path.start.face, lerp(path.start.uv, path.end.uv, t)};
@@ -2629,17 +2708,38 @@ mesh_point eval_path_point(const geodesic_path& path,
       return vec3f{v.y, v.z, v.x};
   };
 
-  auto parameter_t = path_parameters(
-      path_positions(path, triangles, positions, adjacencies));
-
-  // find the point in the middle
+  // TODO(splinesurf): check which is better betwee linear saerch, binary search
+  // and "linear fit" search.
+#if 1
+  // linear search
   auto i = 0;
   for (; i < parameter_t.size() - 1; i++) {
-    if (parameter_t[i + 1] >= 0.5) break;
+    if (parameter_t[i + 1] >= t) break;
   }
-  auto t_low = parameter_t[i], t_high = parameter_t[i + 1];
-  auto alpha = (t - t_low) / (t_high - t_low);
-  // alpha == 0 -> t_low, alpha == 1 -> t_high
+#else
+  // binary search
+  // (but "linear fit search" should be faster here)
+  // https://blog.demofox.org/2019/03/22/linear-fit-search/
+  auto i      = -1;
+  auto i_low  = 0;
+  auto i_high = (int)parameter_t.size() - 1;
+  while (true) {
+    i           = (i_high + i_low) / 2;
+    auto t_low  = parameter_t[i];
+    auto t_high = parameter_t[i + 1];
+    if (t_low <= t && t_high >= t) break;
+
+    if (t_low > t) {
+      i_high = i;
+    } else {
+      i_low = i;
+    }
+  }
+#endif
+
+  auto t_low  = parameter_t[i];
+  auto t_high = parameter_t[i + 1];
+  auto alpha  = (t - t_low) / (t_high - t_low);
   auto face   = path.strip[i];
   auto uv_low = vec2f{0, 0};
   if (i == 0) {
@@ -2665,12 +2765,136 @@ mesh_point eval_path_point(const geodesic_path& path,
   return mesh_point{face, uv};
 }
 
+mesh_point eval_path_point(const geodesic_path& path,
+    const vector<vec3i>& triangles, const vector<vec3f>& positions,
+    const vector<vec3i>& adjacencies, float t) {
+  auto parameter_t = path_parameters(
+      path_positions(path, triangles, positions, adjacencies));
+  return eval_path_point(
+      path, triangles, positions, adjacencies, parameter_t, t);
+}
+
 }  // namespace yocto
 
 // -----------------------------------------------------------------------------
 // IMPLEMENTATION OF MESH IO
 // -----------------------------------------------------------------------------
 namespace yocto {
+
+// Convert quads to triangles
+static vector<vec3i> quads_to_triangles(const vector<vec4i>& quads) {
+  auto triangles = vector<vec3i>{};
+  triangles.reserve(quads.size() * 2);
+  for (auto& q : quads) {
+    triangles.push_back({q.x, q.y, q.w});
+    if (q.z != q.w) triangles.push_back({q.z, q.w, q.y});
+  }
+  return triangles;
+}
+
+// Load ply mesh
+bool load_mesh(const string& filename, vector<vec3i>& triangles,
+    vector<vec3f>& positions, string& error) {
+  auto format_error = [filename, &error]() {
+    error = filename + ": unknown format";
+    return false;
+  };
+  auto shape_error = [filename, &error]() {
+    error = filename + ": empty shape";
+    return false;
+  };
+
+  triangles = {};
+  positions = {};
+
+  auto ext = path_extension(filename);
+  if (ext == ".ply" || ext == ".PLY") {
+    // open ply
+    auto ply_guard = std::make_unique<ply_model>();
+    auto ply       = ply_guard.get();
+    if (!load_ply(filename, ply, error)) return false;
+
+    // gets vertex
+    get_positions(ply, positions);
+
+    // get faces
+    get_triangles(ply, triangles);
+
+    if (positions.empty()) return shape_error();
+    return true;
+  } else if (ext == ".obj" || ext == ".OBJ") {
+    // load obj
+    auto obj_guard = std::make_unique<obj_scene>();
+    auto obj       = obj_guard.get();
+    if (!load_obj(filename, obj, error, true)) return false;
+
+    // get shape
+    if (obj->shapes.empty()) return shape_error();
+    if (obj->shapes.size() > 1) return shape_error();
+    auto shape = obj->shapes.front();
+    if (shape->points.empty() && shape->lines.empty() && shape->faces.empty())
+      return shape_error();
+
+    // decide what to do and get properties
+    if (!shape->faces.empty()) {
+      auto materials     = vector<string>{};
+      auto ematerials    = vector<int>{};
+      auto quadspos      = vector<vec4i>{};
+      auto quadsnorm     = vector<vec4i>{};
+      auto quadstexcoord = vector<vec4i>{};
+      auto normals       = vector<vec3f>{};
+      auto texcoords     = vector<vec2f>{};
+      get_fvquads(shape, quadspos, quadsnorm, quadstexcoord, positions, normals,
+          texcoords, materials, ematerials);
+      triangles = quads_to_triangles(quadspos);
+    } else {
+      return shape_error();
+    }
+
+    if (positions.empty()) return shape_error();
+    return true;
+  } else {
+    return format_error();
+  }
+}
+
+// Save ply mesh
+bool save_mesh(const string& filename, const vector<vec3i>& triangles,
+    const vector<vec3f>& positions, string& error, bool ascii) {
+  auto format_error = [filename, &error]() {
+    error = filename + ": unknown format";
+    return false;
+  };
+  auto shape_error = [filename, &error]() {
+    error = filename + ": empty shape";
+    return false;
+  };
+
+  auto ext = path_extension(filename);
+  if (ext == ".ply" || ext == ".PLY") {
+    // create ply
+    auto ply_guard = std::make_unique<ply_model>();
+    auto ply       = ply_guard.get();
+    add_positions(ply, positions);
+    add_triangles(ply, triangles);
+    if (!save_ply(filename, ply, error)) return false;
+    return true;
+  } else if (ext == ".obj" || ext == ".OBJ") {
+    auto obj_guard = std::make_unique<obj_scene>();
+    auto obj       = obj_guard.get();
+    auto oshape    = add_shape(obj);
+    if (!triangles.empty()) {
+      set_triangles(oshape, triangles, positions, {}, {}, {});
+    } else {
+      return shape_error();
+    }
+    auto err = ""s;
+    if (!save_obj(filename, obj, error)) return false;
+    return true;
+  } else {
+    return format_error();
+  }
+}
 
 // Load ply mesh
 bool load_mesh(const string& filename, vector<vec3i>& triangles,
@@ -2693,24 +2917,46 @@ bool load_mesh(const string& filename, vector<vec3i>& triangles,
 
   auto ext = path_extension(filename);
   if (ext == ".ply" || ext == ".PLY") {
-    auto ply = ply_model{};
+    // open ply
+    auto ply_guard = std::make_unique<ply_model>();
+    auto ply       = ply_guard.get();
     if (!load_ply(filename, ply, error)) return false;
+
+    // gets vertex
     get_positions(ply, positions);
     get_normals(ply, normals);
     get_texcoords(ply, texcoords, flip_texcoord);
     get_colors(ply, colors);
+
+    // get faces
     get_triangles(ply, triangles);
-    if (triangles.empty()) return shape_error();
+
+    if (positions.empty()) return shape_error();
     return true;
   } else if (ext == ".obj" || ext == ".OBJ") {
-    auto obj = obj_shape{};
+    // load obj
+    auto obj_guard = std::make_unique<obj_scene>();
+    auto obj       = obj_guard.get();
     if (!load_obj(filename, obj, error, true)) return false;
-    auto materials = vector<int>{};
-    get_positions(obj, positions);
-    get_normals(obj, normals);
-    get_texcoords(obj, texcoords, flip_texcoord);
-    get_triangles(obj, triangles, materials);
-    if (triangles.empty()) return shape_error();
+
+    // get shape
+    if (obj->shapes.empty()) return shape_error();
+    if (obj->shapes.size() > 1) return shape_error();
+    auto shape = obj->shapes.front();
+    if (shape->points.empty() && shape->lines.empty() && shape->faces.empty())
+      return shape_error();
+
+    // decide what to do and get properties
+    auto materials  = vector<string>{};
+    auto ematerials = vector<int>{};
+    if (!shape->faces.empty()) {
+      get_triangles(shape, triangles, positions, normals, texcoords, materials,
+          ematerials, flip_texcoord);
+    } else {
+      return shape_error();
+    }
+
+    if (positions.empty()) return shape_error();
     return true;
   } else {
     return format_error();
@@ -2733,7 +2979,9 @@ bool save_mesh(const string& filename, const vector<vec3i>& triangles,
 
   auto ext = path_extension(filename);
   if (ext == ".ply" || ext == ".PLY") {
-    auto ply = ply_model{};
+    // create ply
+    auto ply_guard = std::make_unique<ply_model>();
+    auto ply       = ply_guard.get();
     add_positions(ply, positions);
     add_normals(ply, normals);
     add_texcoords(ply, texcoords, flip_texcoord);
@@ -2742,102 +2990,17 @@ bool save_mesh(const string& filename, const vector<vec3i>& triangles,
     if (!save_ply(filename, ply, error)) return false;
     return true;
   } else if (ext == ".obj" || ext == ".OBJ") {
-    auto obj = obj_shape{};
-    add_positions(obj, positions);
-    add_normals(obj, normals);
-    add_texcoords(obj, texcoords, flip_texcoord);
-    add_triangles(obj, triangles, 0, !normals.empty(), !texcoords.empty());
-    if (!save_obj(filename, obj, error)) return false;
-    return true;
-  } else if (ext == ".stl" || ext == ".STL") {
-    auto stl = stl_model{};
-    if (triangles.empty()) return shape_error();
-    add_triangles(stl, triangles, positions, {});
-    if (!save_stl(filename, stl, error)) return false;
-    return true;
-  } else {
-    return format_error();
-  }
-}
-
-// Load ply mesh
-bool load_mesh(const string& filename, vector<vec3i>& triangles,
-    vector<vec3f>& positions, string& error) {
-  auto format_error = [filename, &error]() {
-    error = filename + ": unknown format";
-    return false;
-  };
-  auto shape_error = [filename, &error]() {
-    error = filename + ": empty shape";
-    return false;
-  };
-
-  triangles = {};
-  positions = {};
-
-  auto ext = path_extension(filename);
-  if (ext == ".ply" || ext == ".PLY") {
-    auto ply = ply_model{};
-    if (!load_ply(filename, ply, error)) return false;
-    get_positions(ply, positions);
-    get_triangles(ply, triangles);
-    if (positions.empty()) return shape_error();
-    return true;
-  } else if (ext == ".obj" || ext == ".OBJ") {
-    auto obj = obj_shape{};
-    if (!load_obj(filename, obj, error, true)) return false;
-    auto materials = vector<int>{};
-    get_positions(obj, positions);
-    get_triangles(obj, triangles, materials);
-    if (triangles.empty()) return shape_error();
-    return true;
-  } else if (ext == ".stl" || ext == ".STL") {
-    auto stl = stl_model{};
-    if (!load_stl(filename, stl, error)) return false;
-    if (stl.shapes.empty()) return shape_error();
-    if (stl.shapes.size() > 1) return shape_error();
-    auto fnormals = vector<vec3f>{};
-    if (!get_triangles(stl, 0, triangles, positions, fnormals))
+    auto obj_guard = std::make_unique<obj_scene>();
+    auto obj       = obj_guard.get();
+    auto oshape    = add_shape(obj);
+    if (!triangles.empty()) {
+      set_triangles(
+          oshape, triangles, positions, normals, texcoords, {}, flip_texcoord);
+    } else {
       return shape_error();
-    if (positions.empty()) return shape_error();
-    return true;
-  } else {
-    return format_error();
-  }
-}
-
-// Save ply mesh
-bool save_mesh(const string& filename, const vector<vec3i>& triangles,
-    const vector<vec3f>& positions, string& error, bool ascii) {
-  auto format_error = [filename, &error]() {
-    error = filename + ": unknown format";
-    return false;
-  };
-  auto shape_error = [filename, &error]() {
-    error = filename + ": empty shape";
-    return false;
-  };
-
-  auto ext = path_extension(filename);
-  if (ext == ".ply" || ext == ".PLY") {
-    auto ply = ply_model{};
-    if (triangles.empty()) return shape_error();
-    add_positions(ply, positions);
-    add_triangles(ply, triangles);
-    if (!save_ply(filename, ply, error)) return false;
-    return true;
-  } else if (ext == ".obj" || ext == ".OBJ") {
-    auto obj = obj_shape{};
-    add_positions(obj, positions);
-    add_triangles(obj, triangles, 0, false, false);
+    }
     auto err = ""s;
     if (!save_obj(filename, obj, error)) return false;
-    return true;
-  } else if (ext == ".stl" || ext == ".STL") {
-    auto stl = stl_model{};
-    if (triangles.empty()) return shape_error();
-    add_triangles(stl, triangles, positions, {});
-    if (!save_stl(filename, stl, error)) return false;
     return true;
   } else {
     return format_error();
@@ -2865,24 +3028,46 @@ bool load_lines(const string& filename, vector<vec2i>& lines,
 
   auto ext = path_extension(filename);
   if (ext == ".ply" || ext == ".PLY") {
-    auto ply = ply_model{};
+    // open ply
+    auto ply_guard = std::make_unique<ply_model>();
+    auto ply       = ply_guard.get();
     if (!load_ply(filename, ply, error)) return false;
+
+    // gets vertex
     get_positions(ply, positions);
     get_normals(ply, normals);
     get_texcoords(ply, texcoords, flip_texcoord);
     get_colors(ply, colors);
+
+    // get faces
     get_lines(ply, lines);
+
     if (positions.empty()) return shape_error();
     return true;
   } else if (ext == ".obj" || ext == ".OBJ") {
-    auto obj = obj_shape{};
+    // load obj
+    auto obj_guard = std::make_unique<obj_scene>();
+    auto obj       = obj_guard.get();
     if (!load_obj(filename, obj, error, true)) return false;
-    auto materials = vector<int>{};
-    get_positions(obj, positions);
-    get_normals(obj, normals);
-    get_texcoords(obj, texcoords, flip_texcoord);
-    get_lines(obj, lines, materials);
-    if (lines.empty()) return shape_error();
+
+    // get shape
+    if (obj->shapes.empty()) return shape_error();
+    if (obj->shapes.size() > 1) return shape_error();
+    auto shape = obj->shapes.front();
+    if (shape->points.empty() && shape->lines.empty() && shape->faces.empty())
+      return shape_error();
+
+    // decide what to do and get properties
+    auto materials  = vector<string>{};
+    auto ematerials = vector<int>{};
+    if (!shape->faces.empty()) {
+      get_lines(shape, lines, positions, normals, texcoords, materials,
+          ematerials, flip_texcoord);
+    } else {
+      return shape_error();
+    }
+
+    if (positions.empty()) return shape_error();
     return true;
   } else {
     return format_error();
@@ -2905,7 +3090,9 @@ bool save_lines(const string& filename, const vector<vec2i>& lines,
 
   auto ext = path_extension(filename);
   if (ext == ".ply" || ext == ".PLY") {
-    auto ply = ply_model{};
+    // create ply
+    auto ply_guard = std::make_unique<ply_model>();
+    auto ply       = ply_guard.get();
     add_positions(ply, positions);
     add_normals(ply, normals);
     add_texcoords(ply, texcoords, flip_texcoord);
@@ -2914,11 +3101,16 @@ bool save_lines(const string& filename, const vector<vec2i>& lines,
     if (!save_ply(filename, ply, error)) return false;
     return true;
   } else if (ext == ".obj" || ext == ".OBJ") {
-    auto obj = obj_shape{};
-    add_positions(obj, positions);
-    add_normals(obj, normals);
-    add_texcoords(obj, texcoords, flip_texcoord);
-    add_lines(obj, lines, 0, !normals.empty(), !texcoords.empty());
+    auto obj_guard = std::make_unique<obj_scene>();
+    auto obj       = obj_guard.get();
+    auto oshape    = add_shape(obj);
+    if (!lines.empty()) {
+      set_lines(
+          oshape, lines, positions, normals, texcoords, {}, flip_texcoord);
+    } else {
+      return shape_error();
+    }
+    auto err = ""s;
     if (!save_obj(filename, obj, error)) return false;
     return true;
   } else {
