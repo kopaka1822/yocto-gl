@@ -278,6 +278,13 @@ void run_ui(gui_window* win) {
     win->input.modifier_ctrl =
         glfwGetKey(win->win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
         glfwGetKey(win->win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+  	// camera keys
+    win->input.key_w = glfwGetKey(win->win, GLFW_KEY_W);
+    win->input.key_a = glfwGetKey(win->win, GLFW_KEY_A);
+    win->input.key_s = glfwGetKey(win->win, GLFW_KEY_S);
+    win->input.key_d = glfwGetKey(win->win, GLFW_KEY_D);
+    win->input.key_q = glfwGetKey(win->win, GLFW_KEY_Q);
+    win->input.key_e = glfwGetKey(win->win, GLFW_KEY_E);
     glfwGetWindowSize(
         win->win, &win->input.window_size.x, &win->input.window_size.y);
     if (win->widgets_width) win->input.window_size.x -= win->widgets_width;

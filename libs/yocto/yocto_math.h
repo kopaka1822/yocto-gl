@@ -2458,9 +2458,10 @@ inline frame3f camera_fpscam(
   auto z = orthonormalize(frame.z, y);
   auto x = cross(y, z);
 
-  auto rot = rotation_frame(vec3f{1, 0, 0}, rotate.y) *
+  auto rot = rotation_frame(y, rotate.x) *
              frame3f{frame.x, frame.y, frame.z, vec3f{0, 0, 0}} *
-             rotation_frame(vec3f{0, 1, 0}, rotate.x);
+             rotation_frame(vec3f{1, 0, 0}, rotate.y);
+             
   auto pos = frame.o + transl.x * x + transl.y * y + transl.z * z;
 
   return {rot.x, rot.y, rot.z, pos};

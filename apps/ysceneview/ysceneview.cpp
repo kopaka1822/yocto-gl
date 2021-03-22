@@ -637,19 +637,27 @@ int main(int argc, const char* argv[]) {
     auto app = apps->selected;
 
     // handle mouse and keyboard for navigation
-    if ((input.mouse_left || input.mouse_right) && !input.modifier_alt &&
-        !input.widgets_active) {
-      auto dolly  = 0.0f;
-      auto pan    = zero2f;
+    if ((input.mouse_left || input.key_w || input.key_s || input.key_a ||
+        input.key_d || input.key_e || input.key_q) &&
+        !input.modifier_alt && !input.widgets_active) {
+    	
       auto rotate = zero2f;
       if (input.mouse_left && !input.modifier_shift)
         rotate = (input.mouse_pos - input.mouse_last) / 100.0f;
-      if (input.mouse_right)
-        dolly = (input.mouse_pos.x - input.mouse_last.x) / 100.0f;
-      if (input.mouse_left && input.modifier_shift)
-        pan = (input.mouse_pos - input.mouse_last) / 100.0f;
-      std::tie(app->iocamera->frame, app->iocamera->focus) = camera_turntable(
-          app->iocamera->frame, app->iocamera->focus, rotate, dolly, pan);
+      rotate.y = -rotate.y;
+    	rotate.x = -rotate.x;
+
+      const auto& frame = app->iocamera->frame;
+      auto translate = zero3f;
+      float       scale = 0.1f;
+      if (input.key_w) translate.z -= scale;
+      if (input.key_s) translate.z += scale;
+      if (input.key_a) translate.x -= scale;
+      if (input.key_d) translate.x += scale;
+      if (input.key_e) translate.y += scale;
+      if (input.key_q) translate.y -= scale;
+
+    	app->iocamera->frame = camera_fpscam(frame, translate, rotate);
       set_frame(app->glcamera, app->iocamera->frame);
     }
   };
