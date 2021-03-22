@@ -49,6 +49,8 @@
 #endif
 #include <GLFW/glfw3.h>
 
+
+#include "yocto_opengl.h"
 #include "ext/imgui/imgui.h"
 #include "ext/imgui/imgui_impl_glfw.h"
 #include "ext/imgui/imgui_impl_opengl3.h"
@@ -247,6 +249,7 @@ void init_window(gui_window* win, const vec2i& size, const string& title,
 
 void clear_window(gui_window* win) {
   glfwDestroyWindow(win->win);
+  set_ogl_context_destroyed();
   glfwTerminate();
   win->win = nullptr;
 }

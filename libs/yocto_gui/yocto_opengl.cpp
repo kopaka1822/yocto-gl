@@ -40,6 +40,8 @@
 #undef far
 #endif
 
+static bool ogl_context_destructed = false;
+
 // -----------------------------------------------------------------------------
 // USING DIRECTIVES
 // -----------------------------------------------------------------------------
@@ -83,6 +85,11 @@ bool init_ogl(string& error) {
   return true;
 }
 
+void set_ogl_context_destroyed()
+{
+	ogl_context_destructed= true;
+}
+
 GLenum _assert_ogl_error() {
   auto error_code = glGetError();
   if (error_code != GL_NO_ERROR) {
@@ -102,7 +109,11 @@ GLenum _assert_ogl_error() {
   }
   return error_code;
 }
-void assert_ogl_error() { assert(_assert_ogl_error() == GL_NO_ERROR); }
+void assert_ogl_error()
+{
+  if (ogl_context_destructed) return;
+	assert(_assert_ogl_error() == GL_NO_ERROR);
+}
 
 void clear_ogl_framebuffer(const vec4f& color, bool clear_depth) {
   glClearColor(color.x, color.y, color.z, color.w);

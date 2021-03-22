@@ -63,6 +63,7 @@ namespace yocto {
 
 // Commands to setup the opengl context and issue gpu operations.
 bool init_ogl(string& error);
+void set_ogl_context_destroyed(); // call when window context was destructed (lets commands fail silently)
 void assert_ogl_error();
 bool check_ogl_error(string& error);
 void clear_ogl_framebuffer(const vec4f& color, bool clear_depth = true);
