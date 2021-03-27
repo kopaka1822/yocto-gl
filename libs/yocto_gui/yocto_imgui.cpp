@@ -540,7 +540,7 @@ bool draw_filedialog(gui_window* win, const char* lbl, string& path, bool save,
     }
     auto ok = false, exit = false;
     if (ImGui::Button("Ok")) {
-      path = state.dirname + state.filename;
+      path = state.dirname + "/" + state.filename;
       ok   = true;
       exit = true;
     }

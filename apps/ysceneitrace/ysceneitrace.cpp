@@ -488,7 +488,7 @@ void draw_widgets(gui_window* win, app_states* apps, const gui_input& input) {
           "*.png;*.jpg;*.tga;*.bmp;*.hdr;*.exr")) {
     auto app     = apps->selected;
     app->outname = save_path;
-    save_image(app->imagename, app->display, app->error);
+    save_image(app->outname, app->display, app->error);
     save_path = "";
   }
   continue_line(win);
