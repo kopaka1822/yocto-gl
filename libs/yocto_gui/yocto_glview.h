@@ -264,6 +264,13 @@ struct glinput_state {
   double   time_delta           = 0;             // time delta
   vec2i    window_size          = {0, 0};        // window size
   vec4i    framebuffer_viewport = {0, 0, 0, 0};  // framebuffer viewport
+  // camera keys
+  bool key_w = false;
+  bool key_a = false;
+  bool key_s = false;
+  bool key_d = false;
+  bool key_q = false;
+  bool key_e = false;
 };
 
 // Init callback called after the window has opened

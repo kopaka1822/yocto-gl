@@ -84,23 +84,30 @@ static bool uiupdate_image_params(
 
 static bool uiupdate_camera_params(
     const glinput_state& input, scene_camera& camera) {
-  if ((input.mouse_left || input.mouse_right) && !input.modifier_alt &&
-      !input.modifier_ctrl && !input.widgets_active) {
-    auto dolly  = 0.0f;
-    auto pan    = zero2f;
+  if ((input.mouse_left || input.key_w || input.key_s || input.key_a ||
+          input.key_d || input.key_e || input.key_q) &&
+      !input.modifier_alt && !input.widgets_active) {
+  	
     auto rotate = zero2f;
     if (input.mouse_left && !input.modifier_shift)
       rotate = (input.mouse_pos - input.mouse_last) / 100.0f;
-    if (input.mouse_right)
-      dolly = (input.mouse_pos.x - input.mouse_last.x) / 100.0f;
-    if (input.mouse_left && input.modifier_shift)
-      pan = (input.mouse_pos - input.mouse_last) * camera.focus / 200.0f;
-    pan.x               = -pan.x;
-    auto [frame, focus] = camera_turntable(
-        camera.frame, camera.focus, rotate, dolly, pan);
-    if (camera.frame != frame || camera.focus != focus) {
-      camera.frame = frame;
-      camera.focus = focus;
+    
+		rotate.y = -rotate.y;
+    rotate.x = -rotate.x;
+
+    const auto& frame     = camera.frame;
+    auto        translate = zero3f;
+    float       scale     = 0.1f;
+    if (input.key_w) translate.z -= scale;
+    if (input.key_s) translate.z += scale;
+    if (input.key_a) translate.x -= scale;
+    if (input.key_d) translate.x += scale;
+    if (input.key_e) translate.y += scale;
+    if (input.key_q) translate.y -= scale;
+
+  	auto newFrame = camera_fpscam(frame, translate, rotate);
+    if (camera.frame != newFrame) {
+      camera.frame = newFrame;
       return true;
     }
   }
@@ -1809,6 +1816,12 @@ void run_ui(const vec2i& size, const string& title,
     state.input.modifier_ctrl =
         glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
         glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+    state.input.key_w = glfwGetKey(window, GLFW_KEY_W);
+    state.input.key_a = glfwGetKey(window, GLFW_KEY_A);
+    state.input.key_s = glfwGetKey(window, GLFW_KEY_S);
+    state.input.key_d = glfwGetKey(window, GLFW_KEY_D);
+    state.input.key_q = glfwGetKey(window, GLFW_KEY_Q);
+    state.input.key_e = glfwGetKey(window, GLFW_KEY_E);
     glfwGetWindowSize(
         window, &state.input.window_size.x, &state.input.window_size.y);
     if (state.widgets_width) state.input.window_size.x -= state.widgets_width;
